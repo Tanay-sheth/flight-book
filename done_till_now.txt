@@ -1,0 +1,280 @@
+================================================================================
+                    FLIGHT BOOKING APP - CURRENT IMPLEMENTATION LOG
+                             Last Updated: 2026-04-01
+================================================================================
+
+PROJECT OVERVIEW
+================================================================================
+This is a Next.js App Router flight booking application using:
+- Next.js 16 + TypeScript
+- Prisma ORM + PostgreSQL (Neon)
+- Better Auth for authentication/session
+- Tailwind CSS for UI
+
+The app currently includes:
+- Role-based navigation and route protection
+- AIRPORT_MANAGER-only admin routes and admin APIs
+- User search/discovery flow on /flights with autocomplete and filters
+- Booking details route (/bookings/[id]) to keep click flow valid
+
+================================================================================
+DATABASE AND MODELS
+================================================================================
+Prisma models:
+- User
+- Session
+- Account
+- Verification
+- Airport
+- Airline
+- Airplane
+- Flight
+
+Enums:
+- UserRole: USER | AIRPORT_MANAGER | ADMIN
+- FlightStatus: SCHEDULED | DELAYED | BOARDING | CANCELLED
+
+Current access rule in code:
+- Admin behavior is granted only to AIRPORT_MANAGER.
+- ADMIN enum still exists in schema but is not considered admin by current guards.
+
+Seeding:
+- prisma/seed.ts populates airports, airlines, airplanes, and flights for testing.
+
+================================================================================
+AUTHENTICATION AND ROLE RESOLUTION
+================================================================================
+Authentication:
+- Better Auth wired through app/api/auth/[...all]/route.ts
+- Session retrieved via auth.api.getSession
+
+Role resolution:
+- Role fetched from DB on protected server routes.
+- Middleware role source endpoint:
+  - GET /api/auth/role
+
+Shared helper:
+- lib/route-auth.ts
+  - getSessionAndRole(request)
+  - isAdminRole(role) -> role === AIRPORT_MANAGER
+
+================================================================================
+ROUTES AND ACCESS CONTROL
+================================================================================
+Public:
+- /
+- /login
+
+Utility:
+- /redirect
+  - Post-login redirection based on role and optional target/from query params.
+
+Dashboard:
+- /dashboard
+- /dashboard/admin
+- /dashboard/user
+
+Search and booking:
+- /flights
+- /bookings/[id]
+
+APIs:
+- /api/auth/[...all]
+- /api/auth/role
+- /api/flights/search
+- /api/admin/flights
+- /api/admin/flights/[id]
+- /api/admin/airlines
+- /api/admin/airports
+
+Middleware (middleware.ts):
+- Protects /dashboard/*, /flights/*, /bookings/*, /api/admin/*
+- If unauthenticated:
+  - redirects page routes to /login
+  - returns 401 for protected API routes
+- If non-admin on admin routes:
+  - redirects page routes to /dashboard/user
+  - returns 403 for admin APIs
+- If AIRPORT_MANAGER visits user-protected surfaces:
+  - redirects to /dashboard/admin
+
+================================================================================
+ADMIN IMPLEMENTATION (AIRPORT_MANAGER ONLY)
+================================================================================
+Admin page:
+- app/dashboard/admin/page.tsx
+- Server-side role gate requires AIRPORT_MANAGER
+
+Admin UI:
+- components/AdminFlightDashboard.tsx
+- Features:
+  - Read flights (GET /api/admin/flights)
+  - Update flight status (PATCH /api/admin/flights/[id])
+  - Delete flights (DELETE /api/admin/flights/[id])
+  - Loading and error handling
+
+Admin APIs are protected in:
+- app/api/admin/flights/route.ts
+- app/api/admin/flights/[id]/route.ts
+- app/api/admin/airlines/route.ts
+- app/api/admin/airports/route.ts
+
+================================================================================
+USER SEARCH AND DISCOVERY (PHASE 2)
+================================================================================
+Main search page:
+- app/flights/page.tsx
+
+Hero search and filters:
+- components/FlightHeroSearch.tsx
+
+Implemented search inputs:
+- Source airport (autocomplete via datalist)
+- Destination airport (autocomplete via datalist)
+- Date
+- Airline (autocomplete via datalist)
+- Min price
+- Max price
+
+Query and validation handling:
+- Date strict parse (YYYY-MM-DD) with UTC day boundaries
+- Price parsing supports minPrice, maxPrice, and compact priceRange
+- Invalid/negative values sanitized
+- min/max auto-corrected when reversed
+
+Search API:
+- app/api/flights/search/route.ts
+- Supported params:
+  - sourceAirportId
+  - destinationAirportId
+  - airlineId
+  - date
+  - minPrice
+  - maxPrice
+  - priceRange
+
+Results UI:
+- components/FlightResults.tsx
+- Displays route, timing, duration, stop estimate, airline visual, price, capacity
+- Book action links to /bookings/[id]
+
+================================================================================
+USER DASHBOARD FLOW (FIXED)
+================================================================================
+User page:
+- app/dashboard/user/page.tsx
+
+User dashboard component:
+- components/UserFlightDashboard.tsx
+
+Current behavior:
+- Fetches from user-safe endpoint: /api/flights/search
+- No longer fetches /api/admin/flights (removed USER 403 issue)
+- Provides direct button: Open Search and Filters -> /flights
+- Row action Book Now -> /bookings/[id]
+
+================================================================================
+BOOKING ROUTE CONTINUITY (FLOW REPAIR)
+================================================================================
+Previous issue:
+- Book actions could lead to missing routes and 404 errors.
+
+Fix:
+- Added app/bookings/[id]/page.tsx
+- Behavior:
+  - Session required
+  - USER role required
+  - Flight detail view for selected id
+  - Back to Search link
+
+Result:
+- Search -> Book Now -> Booking details is now a valid route chain.
+
+================================================================================
+WELCOME AND ENTRY FLOW UPDATES
+================================================================================
+Welcome section:
+- components/WelcomeSection.tsx
+
+Current dashboard entry behavior:
+- USER button Search Flights -> /flights
+- AIRPORT_MANAGER buttons:
+  - Go to Admin Panel -> /dashboard/admin
+  - Explore User Flow -> /flights
+
+Unified user journey:
+- /dashboard -> /flights -> /bookings/[id]
+
+================================================================================
+KNOWN GAPS AND NEXT WORK
+================================================================================
+Not yet implemented:
+- Persistent booking transaction model (Booking table and APIs)
+- Passenger data capture
+- Seat map and seat locking workflow
+- Payment integration
+- Booking confirmation lifecycle
+
+Recommended next steps:
+1) Add Booking model and migration
+2) Add booking create/confirm API
+3) Connect /bookings/[id] page to actual booking submission
+4) Add integration tests for middleware role redirects and route flow
+
+================================================================================
+BUILD / QUALITY STATUS
+================================================================================
+Latest checks:
+- npm run lint: PASS
+
+Notes:
+- Search and role routing regressions previously observed were addressed with:
+  - user endpoint correction (/api/flights/search)
+  - route continuity fixes (/bookings/[id])
+  - dashboard entry flow cleanup
+
+================================================================================
+KEY FILES MAP
+================================================================================
+Core flow:
+- app/flights/page.tsx
+- components/FlightHeroSearch.tsx
+- components/FlightResults.tsx
+- app/api/flights/search/route.ts
+- app/bookings/[id]/page.tsx
+
+Dashboard and navigation:
+- app/dashboard/page.tsx
+- app/dashboard/admin/page.tsx
+- app/dashboard/user/page.tsx
+- components/WelcomeSection.tsx
+- components/UserFlightDashboard.tsx
+- components/AdminFlightDashboard.tsx
+- app/redirect/page.tsx
+
+Role enforcement:
+- middleware.ts
+- app/api/auth/role/route.ts
+- lib/route-auth.ts
+- app/api/admin/flights/route.ts
+- app/api/admin/flights/[id]/route.ts
+- app/api/admin/airlines/route.ts
+- app/api/admin/airports/route.ts
+
+Schema and seed:
+- prisma/schema.prisma
+- prisma/seed.ts
+
+================================================================================
+USEFUL COMMANDS
+================================================================================
+Development:
+- npm run dev
+- npm run lint
+- npm run build
+
+Prisma:
+- npx prisma migrate dev
+- npx prisma db seed
+- npx prisma studio
+- npx prisma db push

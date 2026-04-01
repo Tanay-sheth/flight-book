@@ -1,0 +1,209 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  AIRPORT_MANAGER
+  ADMIN
+}
+
+model User {
+  id            String       @id
+  name          String
+  email         String
+  emailVerified Boolean
+  image         String?
+  role          UserRole     @default(USER)
+  createdAt     DateTime
+  updatedAt     DateTime
+  sessions      Session[]
+  accounts      Account[]
+  bookings      Booking[]
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime
+  updatedAt DateTime
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime
+  updatedAt             DateTime
+
+  @@map("account")
+}
+
+model Verification {
+  id         String    @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime?
+  updatedAt  DateTime?
+
+  @@map("verification")
+}
+
+enum FlightStatus {
+  SCHEDULED
+  DELAYED
+  BOARDING
+  CANCELLED
+}
+
+model Airport {
+  id        String   @id @default(cuid())
+  iata      String   @unique
+  name      String
+  city      String
+  country   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  departures Flight[] @relation("flight_origin")
+  arrivals   Flight[] @relation("flight_destination")
+}
+
+model Airline {
+  id        String    @id @default(cuid())
+  name      String
+  code      String    @unique
+  logoUrl   String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @default(now()) @updatedAt
+
+  airplanes Airplane[]
+  flights   Flight[]
+}
+
+model Airplane {
+  id        String   @id @default(cuid())
+  model     String
+  capacity  Int
+  airline   Airline  @relation(fields: [airlineId], references: [id])
+  airlineId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  flights Flight[]
+}
+
+model Flight {
+  id            String       @id @default(cuid())
+  flightNumber  String
+  origin        Airport      @relation("flight_origin", fields: [originId], references: [id])
+  originId      String
+  destination   Airport      @relation("flight_destination", fields: [destinationId], references: [id])
+  destinationId String
+  airline       Airline      @relation(fields: [airlineId], references: [id])
+  airlineId     String
+  airplane      Airplane     @relation(fields: [airplaneId], references: [id])
+  airplaneId    String
+  departureTime DateTime
+  arrivalTime   DateTime
+  durationMins  Int
+  basePrice     Float
+  status        FlightStatus @default(SCHEDULED)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @default(now()) @updatedAt
+
+  bookings    Booking[]
+  bookedSeats BookedSeat[]
+
+  @@index([originId])
+  @@index([destinationId])
+  @@index([airlineId])
+  @@map("flight")
+}
+
+// ─── Phase 3: Booking & Seat Logic ──────────────────────────
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+model Booking {
+  id          String        @id @default(cuid())
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  flight      Flight        @relation(fields: [flightId], references: [id], onDelete: Cascade)
+  flightId    String
+  status      BookingStatus @default(PENDING)
+  totalPrice  Float
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @default(now()) @updatedAt
+
+  passengers  Passenger[]
+  bookedSeats BookedSeat[]
+
+  @@index([userId])
+  @@index([flightId])
+  @@map("booking")
+}
+
+model Passenger {
+  id         String   @id @default(cuid())
+  booking    Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId  String
+  name       String
+  passportId String
+  age        Int
+  seatLabel  String   // e.g. "3A", "12F"
+  createdAt  DateTime @default(now())
+
+  @@index([bookingId])
+  @@map("passenger")
+}
+
+model BookedSeat {
+  id        String   @id @default(cuid())
+  flight    Flight   @relation(fields: [flightId], references: [id], onDelete: Cascade)
+  flightId  String
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId String
+  seatLabel String   // e.g. "3A", "12F"
+  createdAt DateTime @default(now())
+
+  @@unique([flightId, seatLabel]) // Prevents double-booking the same seat
+  @@index([flightId])
+  @@map("booked_seat")
+}
